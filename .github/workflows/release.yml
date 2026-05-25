@@ -1,0 +1,38 @@
+name: Build and Release WPF App
+
+on:
+  push:
+    tags:
+      - 'v*'    # 当推送以 v 开头的标签时触发，例如 v1.0
+
+jobs:
+  build:
+    runs-on: windows-latest   # 使用 Windows 最新虚拟机
+
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v3
+
+    - name: 设置 .NET 8
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: '8.0.x'
+
+    - name: 还原依赖
+      run: dotnet restore BluetoothLock.csproj
+
+    - name: 发布为单文件 EXE
+      run: >
+        dotnet publish BluetoothLock.csproj -c Release 
+        -r win-x64 
+        --self-contained true 
+        -p:PublishSingleFile=true 
+        -p:IncludeNativeLibrariesForSelfExtract=true 
+        -o ./publish
+
+    - name: 创建 GitHub Release 并上传 EXE
+      uses: softprops/action-gh-release@v1
+      with:
+        files: ./publish/*
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
