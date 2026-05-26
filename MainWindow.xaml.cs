@@ -5,10 +5,11 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows;
-using System.Windows.Forms;
 using Windows.Devices.Bluetooth;
 using Windows.Devices.Enumeration;
 using NotifyIcon = System.Windows.Forms.NotifyIcon;
+using ContextMenuStrip = System.Windows.Forms.ContextMenuStrip;
+using ToolStripSeparator = System.Windows.Forms.ToolStripSeparator;
 
 namespace BluetoothLock
 {
@@ -20,25 +21,39 @@ namespace BluetoothLock
         private BluetoothDevice? _monitoredDevice;
         private NotifyIcon? _notifyIcon;
         private bool _isMonitoring = false;
-        private string? _lastDeviceId;
-        private const string DeviceIdSettingName = "LastMonitoredDeviceId";
+
+        // 用于保存设备 ID 的文件路径（放在程序同目录下）
+        private static string DeviceIdFilePath =>
+            Path.Combine(AppContext.BaseDirectory, "lastdevice.txt");
 
         public MainWindow()
         {
             InitializeComponent();
-            _lastDeviceId = Properties.Settings.Default[DeviceIdSettingName] as string;
             InitializeTray();
             this.Loaded += MainWindow_Loaded;
             this.Closing += MainWindow_Closing;
         }
 
+        // ---------- 窗口加载 ----------
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
             await LoadPairedDevices();
-            if (!string.IsNullOrEmpty(_lastDeviceId))
+
+            // 从文件读取上次保存的设备 ID，如果存在则自动监控
+            string? lastDeviceId = null;
+            if (File.Exists(DeviceIdFilePath))
+            {
+                try
+                {
+                    lastDeviceId = File.ReadAllText(DeviceIdFilePath).Trim();
+                }
+                catch { }
+            }
+
+            if (!string.IsNullOrEmpty(lastDeviceId))
             {
                 var savedDevice = DeviceComboBox.Items.Cast<DeviceInformation>()
-                    .FirstOrDefault(d => d.Id == _lastDeviceId);
+                    .FirstOrDefault(d => d.Id == lastDeviceId);
                 if (savedDevice != null)
                 {
                     DeviceComboBox.SelectedItem = savedDevice;
@@ -48,6 +63,7 @@ namespace BluetoothLock
             }
         }
 
+        // ---------- 加载已配对蓝牙设备 ----------
         private async System.Threading.Tasks.Task LoadPairedDevices()
         {
             try
@@ -64,6 +80,7 @@ namespace BluetoothLock
             }
         }
 
+        // ---------- 开始监控按钮 ----------
         private async void StartStopButton_Click(object sender, RoutedEventArgs e)
         {
             if (_isMonitoring)
@@ -82,6 +99,7 @@ namespace BluetoothLock
             }
         }
 
+        // ---------- 开始监控指定设备 ----------
         private async System.Threading.Tasks.Task StartMonitoring(DeviceInformation deviceInfo)
         {
             StopMonitoring();
@@ -92,8 +110,14 @@ namespace BluetoothLock
                 return;
             }
             _monitoredDevice.ConnectionStatusChanged += Device_ConnectionStatusChanged;
-            Properties.Settings.Default[DeviceIdSettingName] = deviceInfo.Id;
-            Properties.Settings.Default.Save();
+
+            // 保存设备 ID 到文件
+            try
+            {
+                File.WriteAllText(DeviceIdFilePath, deviceInfo.Id);
+            }
+            catch { }
+
             _isMonitoring = true;
             StatusText.Text = $"正在监控: {deviceInfo.Name}";
             if (_monitoredDevice.ConnectionStatus == BluetoothConnectionStatus.Disconnected)
@@ -103,6 +127,7 @@ namespace BluetoothLock
             }
         }
 
+        // ---------- 停止监控 ----------
         private void StopMonitoring()
         {
             if (_monitoredDevice != null)
@@ -115,6 +140,7 @@ namespace BluetoothLock
             StatusText.Text = "监控已停止。";
         }
 
+        // ---------- 蓝牙连接状态变化事件 ----------
         private void Device_ConnectionStatusChanged(BluetoothDevice sender, object args)
         {
             Dispatcher.Invoke(() =>
@@ -131,6 +157,7 @@ namespace BluetoothLock
 
         private void DeviceComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e) { }
 
+        // ---------- 系统托盘 ----------
         private void InitializeTray()
         {
             _notifyIcon = new NotifyIcon
@@ -140,7 +167,7 @@ namespace BluetoothLock
                 Text = "蓝牙锁屏监控"
             };
             _notifyIcon.DoubleClick += (s, e) => ShowWindow();
-            var menu = new System.Windows.Forms.ContextMenuStrip();
+            var menu = new ContextMenuStrip();
             menu.Items.Add("显示窗口", null, (s, e) => ShowWindow());
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("退出程序", null, (s, e) => ExitApplication());
@@ -158,7 +185,8 @@ namespace BluetoothLock
         {
             StopMonitoring();
             _notifyIcon?.Dispose();
-            Application.Current.Shutdown();
+            // 明确使用 WPF 的 Application
+            System.Windows.Application.Current.Shutdown();
         }
 
         private void MainWindow_Closing(object? sender, CancelEventArgs e)
@@ -173,6 +201,7 @@ namespace BluetoothLock
             base.OnStateChanged(e);
         }
 
+        // ---------- 开机自启 ----------
         private void AutoStartCheckBox_Changed(object sender, RoutedEventArgs e)
         {
             string startupFolder = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
@@ -195,8 +224,10 @@ namespace BluetoothLock
             {
                 var shell = new IWshRuntimeLibrary.WshShell();
                 var shortcut = (IWshRuntimeLibrary.IWshShortcut)shell.CreateShortcut(shortcutPath);
-                shortcut.TargetPath = System.Reflection.Assembly.GetExecutingAssembly().Location;
-                shortcut.WorkingDirectory = Path.GetDirectoryName(shortcut.TargetPath);
+                // 使用 Environment.ProcessPath 获取当前 exe 路径（单文件兼容）
+                string exePath = Environment.ProcessPath ?? System.Reflection.Assembly.GetExecutingAssembly().Location;
+                shortcut.TargetPath = exePath;
+                shortcut.WorkingDirectory = Path.GetDirectoryName(exePath);
                 shortcut.Description = "蓝牙锁屏监控";
                 shortcut.Save();
             }
