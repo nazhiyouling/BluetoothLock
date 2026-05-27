@@ -21,8 +21,8 @@ namespace BluetoothLock
         private BluetoothDevice? _monitoredDevice;
         private NotifyIcon? _notifyIcon;
         private bool _isMonitoring = false;
+        private BluetoothConnectionStatus _lastStatus; // 记录上次连接状态，避免重复锁屏
 
-        // 用于保存设备 ID 的文件路径（放在程序同目录下）
         private static string DeviceIdFilePath =>
             Path.Combine(AppContext.BaseDirectory, "lastdevice.txt");
 
@@ -34,12 +34,10 @@ namespace BluetoothLock
             this.Closing += MainWindow_Closing;
         }
 
-        // ---------- 窗口加载 ----------
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
             await LoadPairedDevices();
 
-            // 从文件读取上次保存的设备 ID，如果存在则自动监控
             string? lastDeviceId = null;
             if (File.Exists(DeviceIdFilePath))
             {
@@ -63,7 +61,6 @@ namespace BluetoothLock
             }
         }
 
-        // ---------- 加载已配对蓝牙设备 ----------
         private async System.Threading.Tasks.Task LoadPairedDevices()
         {
             try
@@ -80,7 +77,6 @@ namespace BluetoothLock
             }
         }
 
-        // ---------- 开始监控按钮 ----------
         private async void StartStopButton_Click(object sender, RoutedEventArgs e)
         {
             if (_isMonitoring)
@@ -99,7 +95,6 @@ namespace BluetoothLock
             }
         }
 
-        // ---------- 开始监控指定设备 ----------
         private async System.Threading.Tasks.Task StartMonitoring(DeviceInformation deviceInfo)
         {
             StopMonitoring();
@@ -109,9 +104,11 @@ namespace BluetoothLock
                 StatusText.Text = "无法连接到该设备，请检查设备是否开启蓝牙。";
                 return;
             }
+
+            // 【改动】记录当前状态，但不立即锁屏
+            _lastStatus = _monitoredDevice.ConnectionStatus;
             _monitoredDevice.ConnectionStatusChanged += Device_ConnectionStatusChanged;
 
-            // 保存设备 ID 到文件
             try
             {
                 File.WriteAllText(DeviceIdFilePath, deviceInfo.Id);
@@ -119,15 +116,10 @@ namespace BluetoothLock
             catch { }
 
             _isMonitoring = true;
-            StatusText.Text = $"正在监控: {deviceInfo.Name}";
-            if (_monitoredDevice.ConnectionStatus == BluetoothConnectionStatus.Disconnected)
-            {
-                LockWorkStation();
-                StatusText.Text = "监控开始时设备已断开，已锁屏。";
-            }
+            // 显示当前真实状态
+            StatusText.Text = $"正在监控: {deviceInfo.Name} | 当前状态: {_lastStatus}";
         }
 
-        // ---------- 停止监控 ----------
         private void StopMonitoring()
         {
             if (_monitoredDevice != null)
@@ -140,24 +132,43 @@ namespace BluetoothLock
             StatusText.Text = "监控已停止。";
         }
 
-        // ---------- 蓝牙连接状态变化事件 ----------
+        // 【改动】只在状态“从 Connected 变为 Disconnected”时锁屏
         private void Device_ConnectionStatusChanged(BluetoothDevice sender, object args)
         {
             Dispatcher.Invoke(() =>
             {
-                if (sender.ConnectionStatus == BluetoothConnectionStatus.Disconnected)
+                var currentStatus = sender.ConnectionStatus;
+                // 仅在之前是 Connected，现在变成 Disconnected 时才锁屏
+                if (_lastStatus == BluetoothConnectionStatus.Connected &&
+                    currentStatus == BluetoothConnectionStatus.Disconnected)
                 {
                     LockWorkStation();
                     StatusText.Text = $"设备已断开，屏幕已锁定 ({DateTime.Now:T})";
                 }
                 else
-                    StatusText.Text = $"设备已连接 ({DateTime.Now:T})";
+                {
+                    StatusText.Text = $"状态变化: {_lastStatus} → {currentStatus} ({DateTime.Now:T})";
+                }
+                _lastStatus = currentStatus;
             });
+        }
+
+        // 【新增】测试连接按钮（需在 XAML 中添加按钮，见后）
+        private void TestConnection_Click(object sender, RoutedEventArgs e)
+        {
+            if (_monitoredDevice != null)
+            {
+                var status = _monitoredDevice.ConnectionStatus;
+                StatusText.Text = $"当前设备状态: {status}";
+            }
+            else
+            {
+                StatusText.Text = "尚未选择监控设备。";
+            }
         }
 
         private void DeviceComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e) { }
 
-        // ---------- 系统托盘 ----------
         private void InitializeTray()
         {
             _notifyIcon = new NotifyIcon
@@ -185,7 +196,6 @@ namespace BluetoothLock
         {
             StopMonitoring();
             _notifyIcon?.Dispose();
-            // 明确使用 WPF 的 Application
             System.Windows.Application.Current.Shutdown();
         }
 
@@ -201,7 +211,6 @@ namespace BluetoothLock
             base.OnStateChanged(e);
         }
 
-        // ---------- 开机自启 ----------
         private void AutoStartCheckBox_Changed(object sender, RoutedEventArgs e)
         {
             string startupFolder = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
@@ -224,7 +233,6 @@ namespace BluetoothLock
             {
                 var shell = new IWshRuntimeLibrary.WshShell();
                 var shortcut = (IWshRuntimeLibrary.IWshShortcut)shell.CreateShortcut(shortcutPath);
-                // 使用 Environment.ProcessPath 获取当前 exe 路径（单文件兼容）
                 string exePath = Environment.ProcessPath ?? System.Reflection.Assembly.GetExecutingAssembly().Location;
                 shortcut.TargetPath = exePath;
                 shortcut.WorkingDirectory = Path.GetDirectoryName(exePath);
