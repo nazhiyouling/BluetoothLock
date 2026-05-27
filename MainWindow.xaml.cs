@@ -105,7 +105,7 @@ namespace BluetoothLock
                 return;
             }
 
-            // 【改动】记录当前状态，但不立即锁屏
+            // 记录当前状态，但不立即锁屏
             _lastStatus = _monitoredDevice.ConnectionStatus;
             _monitoredDevice.ConnectionStatusChanged += Device_ConnectionStatusChanged;
 
@@ -116,7 +116,6 @@ namespace BluetoothLock
             catch { }
 
             _isMonitoring = true;
-            // 显示当前真实状态
             StatusText.Text = $"正在监控: {deviceInfo.Name} | 当前状态: {_lastStatus}";
         }
 
@@ -132,13 +131,12 @@ namespace BluetoothLock
             StatusText.Text = "监控已停止。";
         }
 
-        // 【改动】只在状态“从 Connected 变为 Disconnected”时锁屏
+        // 只在状态从 Connected 变为 Disconnected 时锁屏
         private void Device_ConnectionStatusChanged(BluetoothDevice sender, object args)
         {
             Dispatcher.Invoke(() =>
             {
                 var currentStatus = sender.ConnectionStatus;
-                // 仅在之前是 Connected，现在变成 Disconnected 时才锁屏
                 if (_lastStatus == BluetoothConnectionStatus.Connected &&
                     currentStatus == BluetoothConnectionStatus.Disconnected)
                 {
@@ -153,7 +151,7 @@ namespace BluetoothLock
             });
         }
 
-        // 【新增】测试连接按钮（需在 XAML 中添加按钮，见后）
+        // 测试连接按钮（XAML 中需要有对应的按钮）
         private void TestConnection_Click(object sender, RoutedEventArgs e)
         {
             if (_monitoredDevice != null)
@@ -169,11 +167,12 @@ namespace BluetoothLock
 
         private void DeviceComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e) { }
 
+        // ---------- 系统托盘初始化（使用自定义图标）----------
         private void InitializeTray()
         {
             _notifyIcon = new NotifyIcon
             {
-                Icon = SystemIcons.Application,
+                Icon = LoadTrayIcon(),   // 加载自定义图标，失败时回退为默认图标
                 Visible = true,
                 Text = "蓝牙锁屏监控"
             };
@@ -183,6 +182,23 @@ namespace BluetoothLock
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("退出程序", null, (s, e) => ExitApplication());
             _notifyIcon.ContextMenuStrip = menu;
+        }
+
+        // 从嵌入资源加载图标
+        private Icon LoadTrayIcon()
+        {
+            try
+            {
+                // 嵌入资源名称格式：默认命名空间.文件名
+                // 假设命名空间为 BluetoothLock，文件 app.ico 放在根目录
+                var stream = System.Reflection.Assembly.GetExecutingAssembly()
+                    .GetManifestResourceStream("BluetoothLock.app.ico");
+                if (stream != null)
+                    return new Icon(stream);
+            }
+            catch { }
+            // 加载失败时使用系统默认应用程序图标
+            return SystemIcons.Application;
         }
 
         private void ShowWindow()
