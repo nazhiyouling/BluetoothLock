@@ -3,12 +3,19 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
     <UseWPF>true</UseWPF>
-    <UseWindowsForms>true</UseWindowsForms>   <!-- 添加这一行 -->
+    <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
+    <!-- 新增：指定程序图标（EXE 显示的图标） -->
+    <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>
 
-  <!-- 使用 NuGet 包代替 COM 引用，用于创建快捷方式 -->
+  <!-- 已有 NuGet 引用 -->
   <ItemGroup>
     <PackageReference Include="Interop.IWshRuntimeLibrary" Version="1.0.1" />
+  </ItemGroup>
+
+  <!-- 新增：将图标文件作为嵌入资源，这样才能在代码中加载 -->
+  <ItemGroup>
+    <EmbeddedResource Include="app.ico" />
   </ItemGroup>
 </Project>
