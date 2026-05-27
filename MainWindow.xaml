@@ -24,6 +24,7 @@
 
         <StackPanel Orientation="Horizontal" Grid.Row="2" Margin="0,0,0,10">
             <Button Content="开始监控" Click="StartStopButton_Click" Height="30" Width="100"/>
+            <Button Content="测试连接" Click="TestConnection_Click" Height="30" Width="80" Margin="10,0,0,0"/>
             <CheckBox x:Name="AutoStartCheckBox" Content="开机自动启动" Margin="20,0,0,0"
                       Checked="AutoStartCheckBox_Changed" Unchecked="AutoStartCheckBox_Changed"/>
         </StackPanel>
