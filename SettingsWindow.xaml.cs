@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using System.Windows;
 using Windows.Devices.Bluetooth;
-using Windows.Devices.Bluetooth.GenericAttributeProfile;  
+using Windows.Devices.Bluetooth.GenericAttributeProfile;
 using Windows.Devices.Enumeration;
 
 namespace BluetoothLock
@@ -20,8 +20,7 @@ namespace BluetoothLock
 
         private void LoadCurrentSettings()
         {
-            // 从配置文件读取
-            string configPath = System.IO.Path.Combine(AppContext.BaseDirectory, "config.txt");
+            string configPath = Path.Combine(AppContext.BaseDirectory, "config.txt");
             if (File.Exists(configPath))
             {
                 var lines = File.ReadAllLines(configPath);
@@ -102,8 +101,6 @@ namespace BluetoothLock
 
         private void AutoStartCheckBox_Changed(object sender, RoutedEventArgs e)
         {
-            // 保存由 SaveSettings 统一执行，此处可忽略，也可立即保存
-            // 为了体验，立即更新快捷方式
             bool autoStart = AutoStartCheckBox.IsChecked ?? false;
             string startupFolder = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
             string shortcutPath = Path.Combine(startupFolder, "蓝牙锁屏监控.lnk");
