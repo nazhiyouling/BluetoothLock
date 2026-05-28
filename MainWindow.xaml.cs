@@ -7,7 +7,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows;
 using Windows.Devices.Bluetooth;
-using Windows.Devices.Bluetooth.GenericAttributeFeature;
+using Windows.Devices.Bluetooth.GenericAttributeProfile;   // ← 修正
 using Windows.Devices.Enumeration;
 using Windows.Storage.Streams;
 using NotifyIcon = System.Windows.Forms.NotifyIcon;
