@@ -33,7 +33,7 @@ namespace BluetoothLock
         private List<(DateTime Time, short Rssi)> _rssiLogs = new();
         private DispatcherTimer? _rssiTimer;
         private int _lowRssiCount = 0;                // 连续低于阈值的次数
-        private const int LowRssiThresholdCount = 3;  // 连续3次低于阈值才锁屏
+        private const int LowRssiThresholdCount = 2;  // 连续2次低于阈值才锁屏
         private short? _rssiThreshold;                // RSSI 阈值，从设置读取
         private bool _useRssiMode = false;            // 是否启用 RSSI 模式
 
