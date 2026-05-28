@@ -6,7 +6,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <Version>2.5.0</Version>   <!-- 👈 新增：程序版本号，可手动修改 -->
+    <Version>v</Version>   <!-- 👈 新增：程序版本号，可手动修改 -->
   </PropertyGroup>
 
   <ItemGroup>
