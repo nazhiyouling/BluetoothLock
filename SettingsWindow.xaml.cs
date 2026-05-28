@@ -1,10 +1,8 @@
 using System;
 using System.IO;
-using System.Linq;
 using System.Windows;
 using Windows.Devices.Bluetooth;
-using Windows.Devices.Bluetooth.GenericAttributeFeature; // 实际上只需要 GenericAttributeProfile，但为了兼容性，这里引用
-// 避免歧义：实际需要 Windows.Devices.Bluetooth.GenericAttributeProfile;
+using Windows.Devices.Bluetooth.GenericAttributeProfile;  
 using Windows.Devices.Enumeration;
 
 namespace BluetoothLock
