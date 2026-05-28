@@ -5,44 +5,43 @@
         WindowStyle="SingleBorderWindow"
         ShowInTaskbar="False"
         ResizeMode="CanResizeWithGrip">
-    <Viewbox Stretch="Uniform">
-        <Grid Margin="15" MinWidth="400" MinHeight="200">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-                <RowDefinition Height="Auto"/>
-            </Grid.RowDefinitions>
+    <Grid Margin="15">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
 
-            <!-- 标题 + 版本号 -->
-            <TextBlock x:Name="TitleText" FontSize="16" FontWeight="Bold" 
-                       TextWrapping="Wrap" Grid.Row="0" Margin="0,0,0,10"/>
+        <!-- 标题 + 版本号 -->
+        <TextBlock x:Name="TitleText" FontSize="16" FontWeight="Bold" 
+                   TextWrapping="Wrap" Grid.Row="0" Margin="0,0,0,10"/>
 
-            <!-- 设备选择 -->
-            <StackPanel Grid.Row="1" Margin="0,0,0,10">
-                <TextBlock Text="选择要监控的 BLE 设备："/>
-                <ComboBox x:Name="DeviceComboBox" DisplayMemberPath="Name" Height="26"/>
-            </StackPanel>
+        <!-- 设备选择 -->
+        <StackPanel Grid.Row="1" Margin="0,0,0,10">
+            <TextBlock Text="选择要监控的 BLE 设备：" TextWrapping="Wrap"/>
+            <ComboBox x:Name="DeviceComboBox" DisplayMemberPath="Name" HorizontalAlignment="Stretch"/>
+        </StackPanel>
 
-            <!-- 控制按钮：开始/停止监控 + 设置 -->
-            <StackPanel Orientation="Horizontal" Grid.Row="2" Margin="0,0,0,10">
-                <Button Content="开始监控" Click="StartStopButton_Click" Height="30" Width="100"/>
-                <Button Content="⚙ 设置" Click="OpenSettings_Click" Height="30" Width="80" Margin="10,0,0,0"/>
-            </StackPanel>
+        <!-- 控制按钮 -->
+        <StackPanel Orientation="Horizontal" Grid.Row="2" Margin="0,0,0,10">
+            <Button Content="开始监控" Click="StartStopButton_Click" Height="30" Width="100"/>
+            <Button Content="⚙ 设置" Click="OpenSettings_Click" Height="30" Width="80" Margin="10,0,0,0"/>
+        </StackPanel>
 
-            <!-- 状态信息 -->
-            <TextBlock x:Name="StatusText" Text="未监控" Grid.Row="3"
-                       Foreground="Gray" TextWrapping="Wrap" Margin="0,5,0,10"/>
+        <!-- 状态信息（可滚动区域） -->
+        <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto" MaxHeight="100">
+            <TextBlock x:Name="StatusText" Text="未监控" Foreground="Gray" TextWrapping="Wrap" Margin="0,5,0,10"/>
+        </ScrollViewer>
 
-            <!-- 日志计数（可选） -->
-            <TextBlock x:Name="LogCountText" Grid.Row="4" Text="已记录: 0 次"
-                       Foreground="DarkBlue" Margin="0,0,0,10"/>
+        <!-- 日志计数 -->
+        <TextBlock x:Name="LogCountText" Grid.Row="4" Text="已记录: 0 次"
+                   Foreground="DarkBlue" Margin="0,0,0,10" TextWrapping="Wrap"/>
 
-            <!-- 底部提示 -->
-            <TextBlock Grid.Row="5" TextWrapping="Wrap" Foreground="DarkGray" FontSize="12"
-                       Text="提示：可通过右键托盘图标退出或显示窗口。"/>
-        </Grid>
-    </Viewbox>
+        <!-- 底部提示 -->
+        <TextBlock Grid.Row="5" TextWrapping="Wrap" Foreground="DarkGray" FontSize="12"
+                   Text="提示：可通过右键托盘图标退出或显示窗口。启动后自动最小化到托盘。"/>
+    </Grid>
 </Window>
