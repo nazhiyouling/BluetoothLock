@@ -4,10 +4,13 @@ using System.ComponentModel;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Threading;
 using Windows.Devices.Bluetooth;
-using Windows.Devices.Bluetooth.GenericAttributeProfile;   // ← 修正
+using Windows.Devices.Bluetooth.GenericAttributeProfile;
 using Windows.Devices.Enumeration;
 using Windows.Storage.Streams;
 using NotifyIcon = System.Windows.Forms.NotifyIcon;
@@ -26,23 +29,41 @@ namespace BluetoothLock
         private bool _isMonitoring = false;
         private BluetoothConnectionStatus _lastStatus;
 
-        // RSSI 记录列表
-        private List<(DateTime Time, short Rssi)> _rssiLogs = new List<(DateTime, short)>();
+        // RSSI 相关
+        private List<(DateTime Time, short Rssi)> _rssiLogs = new();
+        private DispatcherTimer? _rssiTimer;
+        private int _lowRssiCount = 0;                // 连续低于阈值的次数
+        private const int LowRssiThresholdCount = 3;  // 连续3次低于阈值才锁屏
+        private short? _rssiThreshold;                // RSSI 阈值，从设置读取
+        private bool _useRssiMode = false;            // 是否启用 RSSI 模式
 
         private static string DeviceIdFilePath =>
             Path.Combine(AppContext.BaseDirectory, "lastdevice.txt");
+        private static string ConfigFilePath =>
+            Path.Combine(AppContext.BaseDirectory, "config.txt");
 
         public MainWindow()
         {
             InitializeComponent();
+            LoadVersionInfo();
             InitializeTray();
             this.Loaded += MainWindow_Loaded;
             this.Closing += MainWindow_Closing;
         }
 
+        private void LoadVersionInfo()
+        {
+            var ver = Assembly.GetExecutingAssembly().GetName().Version;
+            string verStr = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}" : "";
+            TitleText.Text = $"蓝牙锁屏监控 {verStr}";
+            this.Title = $"蓝牙锁屏监控 {verStr}";
+        }
+
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
+            LoadSettings();
             await LoadPairedDevices();
+
             string? lastDeviceId = null;
             if (File.Exists(DeviceIdFilePath))
             {
@@ -61,15 +82,16 @@ namespace BluetoothLock
             }
         }
 
+        // ---------- 设备列表（仅 BLE） ----------
         private async System.Threading.Tasks.Task LoadPairedDevices()
         {
             try
             {
                 var devices = await DeviceInformation.FindAllAsync(
-                    BluetoothDevice.GetDeviceSelectorFromPairingState(true));
+                    BluetoothLEDevice.GetDeviceSelectorFromPairingState(true));
                 DeviceComboBox.ItemsSource = devices;
                 if (devices.Count == 0)
-                    StatusText.Text = "未找到已配对的蓝牙设备，请先在系统蓝牙设置中配对手机。";
+                    StatusText.Text = "未找到已配对的 BLE 设备，请先在系统蓝牙设置中与手机配对。";
             }
             catch (Exception ex)
             {
@@ -77,6 +99,7 @@ namespace BluetoothLock
             }
         }
 
+        // ---------- 开始/停止监控 ----------
         private async void StartStopButton_Click(object sender, RoutedEventArgs e)
         {
             if (_isMonitoring)
@@ -112,11 +135,24 @@ namespace BluetoothLock
                 StatusText.Text = "该设备不支持 BLE 或无法连接。";
                 return;
             }
+
             _lastStatus = _monitoredDevice.ConnectionStatus;
             _monitoredDevice.ConnectionStatusChanged += Device_ConnectionStatusChanged;
+
             try { File.WriteAllText(DeviceIdFilePath, deviceInfo.Id); } catch { }
+
             _isMonitoring = true;
-            StatusText.Text = $"正在监控 (BLE): {deviceInfo.Name} | 状态: {_lastStatus}";
+
+            // 如果启用 RSSI 模式，启动定时器
+            if (_useRssiMode && _rssiThreshold.HasValue)
+            {
+                StartRssiTimer();
+                StatusText.Text = $"RSSI 监控已启动 (阈值: {_rssiThreshold} dBm)";
+            }
+            else
+            {
+                StatusText.Text = $"连接监控已启动 (当前: {_lastStatus})";
+            }
         }
 
         private void StopMonitoring()
@@ -127,10 +163,12 @@ namespace BluetoothLock
                 _monitoredDevice.Dispose();
                 _monitoredDevice = null;
             }
+            StopRssiTimer();
             _isMonitoring = false;
             StatusText.Text = "监控已停止。";
         }
 
+        // ---------- 连接状态变化（作为保底） ----------
         private void Device_ConnectionStatusChanged(BluetoothLEDevice sender, object args)
         {
             Dispatcher.Invoke(() =>
@@ -144,95 +182,84 @@ namespace BluetoothLock
                 }
                 else
                 {
-                    StatusText.Text = $"状态变化: {_lastStatus} → {currentStatus} ({DateTime.Now:T})";
+                    StatusText.Text = $"连接状态: {currentStatus}";
                 }
                 _lastStatus = currentStatus;
             });
         }
 
-        private async void TestConnection_Click(object sender, RoutedEventArgs e)
+        // ---------- RSSI 定时检测 ----------
+        private void StartRssiTimer()
         {
-            if (_monitoredDevice != null)
-            {
-                var status = _monitoredDevice.ConnectionStatus;
-                short? rssi = await ReadRssiAsync(_monitoredDevice);
-                StatusText.Text = $"状态: {status}, RSSI: {(rssi.HasValue ? rssi.Value.ToString() : "无法读取")}";
-            }
-            else if (DeviceComboBox.SelectedItem is DeviceInformation device)
-            {
-                try
-                {
-                    using var tempDevice = await BluetoothLEDevice.FromIdAsync(device.Id);
-                    if (tempDevice != null)
-                    {
-                        short? rssi = await ReadRssiAsync(tempDevice);
-                        StatusText.Text = $"状态: {tempDevice.ConnectionStatus}, RSSI: {(rssi.HasValue ? rssi.Value.ToString() : "无法读取")}";
-                    }
-                    else StatusText.Text = "无法访问该设备。";
-                }
-                catch (Exception ex) { StatusText.Text = $"测试失败: {ex.Message}"; }
-            }
-            else StatusText.Text = "请先选择设备。";
+            _rssiTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
+            _rssiTimer.Tick += async (s, e) => await CheckRssiAndLock();
+            _rssiTimer.Start();
         }
 
-        // 新增：记录 RSSI 按钮事件
-        private async void RecordRssi_Click(object sender, RoutedEventArgs e)
+        private void StopRssiTimer()
         {
-            BluetoothLEDevice? device = _monitoredDevice;
-            if (device == null && DeviceComboBox.SelectedItem is DeviceInformation devInfo)
+            if (_rssiTimer != null)
             {
-                try { device = await BluetoothLEDevice.FromIdAsync(devInfo.Id); } catch { }
+                _rssiTimer.Stop();
+                _rssiTimer = null;
             }
-            if (device == null)
-            {
-                StatusText.Text = "无法获取设备对象，请先开始监控或选择设备。";
-                return;
-            }
+            _lowRssiCount = 0;
+        }
 
-            short? rssi = await ReadRssiAsync(device);
-            if (rssi.HasValue)
+        private async Task CheckRssiAndLock()
+        {
+            if (_monitoredDevice == null || !_rssiThreshold.HasValue) return;
+
+            short? rssi = await ReadRssiAsync(_monitoredDevice);
+            if (!rssi.HasValue) return;
+
+            Dispatcher.Invoke(() =>
             {
-                _rssiLogs.Add((DateTime.Now, rssi.Value));
-                UpdateLogCount();
-                StatusText.Text = $"已记录 RSSI: {rssi.Value} dBm (时间: {DateTime.Now:T})";
+                StatusText.Text = $"RSSI: {rssi.Value} dBm (阈值: {_rssiThreshold})";
+            });
+
+            if (rssi.Value < _rssiThreshold.Value)
+            {
+                _lowRssiCount++;
+                if (_lowRssiCount >= LowRssiThresholdCount)
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        LockWorkStation();
+                        StatusText.Text = $"RSSI 持续低于阈值，屏幕已锁定 ({DateTime.Now:T})";
+                    });
+                    _lowRssiCount = 0; // 锁屏后重置
+                }
             }
             else
             {
-                StatusText.Text = "RSSI 读取失败，请确认设备支持 BLE 且在范围内。";
+                _lowRssiCount = 0;
             }
-
-            // 如果临时创建了设备对象，需要释放（但 _monitoredDevice 不能释放）
-            if (device != _monitoredDevice)
-                device.Dispose();
         }
 
-        // 读取 RSSI 的通用方法
-        private async System.Threading.Tasks.Task<short?> ReadRssiAsync(BluetoothLEDevice device)
+        // ---------- 读取 RSSI ----------
+        private async Task<short?> ReadRssiAsync(BluetoothLEDevice device)
         {
             try
             {
-                // 获取设备的所有 GATT 服务
                 var servicesResult = await device.GetGattServicesAsync();
                 if (servicesResult.Status != GattCommunicationStatus.Success)
                     return null;
-        
-                // 查找 TxPower 服务 (0x1804)
+
                 var txPowerService = servicesResult.Services
                     .FirstOrDefault(s => s.Uuid == new Guid("00001804-0000-1000-8000-00805f9b34fb"));
                 if (txPowerService == null)
                     return null;
-        
-                // 获取 TxPowerLevel 特征 (0x2A07)
+
                 var characteristicsResult = await txPowerService.GetCharacteristicsAsync();
                 if (characteristicsResult.Status != GattCommunicationStatus.Success)
                     return null;
-        
+
                 var rssiChar = characteristicsResult.Characteristics
                     .FirstOrDefault(c => c.Uuid == new Guid("00002a07-0000-1000-8000-00805f9b34fb"));
                 if (rssiChar == null)
                     return null;
-        
-                // 读取特征值
+
                 var readResult = await rssiChar.ReadValueAsync();
                 if (readResult.Status == GattCommunicationStatus.Success)
                 {
@@ -240,19 +267,88 @@ namespace BluetoothLock
                     byte[] data = new byte[reader.UnconsumedBufferLength];
                     reader.ReadBytes(data);
                     if (data.Length > 0)
-                        return (sbyte)data[0]; // RSSI 通常是一个有符号字节
+                        return (sbyte)data[0];
                 }
             }
             catch { }
             return null;
         }
 
-        private void UpdateLogCount()
+        // ---------- 设置窗口相关 ----------
+        private void OpenSettings_Click(object sender, RoutedEventArgs e)
         {
-            LogCountText.Text = $"已记录: {_rssiLogs.Count} 次";
+            var settingsWin = new SettingsWindow(this);
+            settingsWin.Owner = this;
+            settingsWin.ShowDialog();
+            // 重新加载设置，可能改变了阈值或模式
+            LoadSettings();
+            // 如果正在监控，重启 RSSI 定时器以应用新阈值
+            if (_isMonitoring && _useRssiMode && _rssiThreshold.HasValue)
+            {
+                StopRssiTimer();
+                StartRssiTimer();
+                StatusText.Text = $"RSSI 阈值已更新: {_rssiThreshold} dBm";
+            }
+            else if (_isMonitoring && !_useRssiMode)
+            {
+                StopRssiTimer();
+                StatusText.Text = "已切换至连接断开锁屏模式";
+            }
         }
 
-        private void DeviceComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e) { }
+        // ---------- 设置存取 ----------
+        private void LoadSettings()
+        {
+            try
+            {
+                if (File.Exists(ConfigFilePath))
+                {
+                    var lines = File.ReadAllLines(ConfigFilePath);
+                    foreach (var line in lines)
+                    {
+                        var parts = line.Split('=');
+                        if (parts.Length != 2) continue;
+                        if (parts[0] == "RssiThreshold")
+                        {
+                            if (short.TryParse(parts[1], out short t))
+                            {
+                                _rssiThreshold = t;
+                                _useRssiMode = true;
+                            }
+                        }
+                        else if (parts[0] == "UseRssiMode")
+                        {
+                            bool.TryParse(parts[1], out _useRssiMode);
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        public void SaveSettings(short? threshold, bool useRssi, bool autoStart)
+        {
+            try
+            {
+                List<string> lines = new List<string>();
+                if (threshold.HasValue)
+                    lines.Add($"RssiThreshold={threshold.Value}");
+                lines.Add($"UseRssiMode={useRssi}");
+                lines.Add($"AutoStart={autoStart}");
+                File.WriteAllLines(ConfigFilePath, lines);
+            }
+            catch { }
+        }
+
+        // 供设置窗口调用的公共方法
+        public BluetoothLEDevice? GetMonitoredDevice() => _monitoredDevice;
+        public async Task<short?> ReadRssiForDevice() =>
+            _monitoredDevice != null ? await ReadRssiAsync(_monitoredDevice) : null;
+        public void AddRssiLog(short rssi)
+        {
+            _rssiLogs.Add((DateTime.Now, rssi));
+            LogCountText.Text = $"已记录: {_rssiLogs.Count} 次";
+        }
 
         // ---------- 托盘 ----------
         private void InitializeTray()
@@ -261,7 +357,7 @@ namespace BluetoothLock
             {
                 Icon = LoadTrayIcon(),
                 Visible = true,
-                Text = "蓝牙锁屏 RSSI 测试"
+                Text = "蓝牙锁屏监控"
             };
             _notifyIcon.DoubleClick += (s, e) => ShowWindow();
             var menu = new ContextMenuStrip();
@@ -275,7 +371,7 @@ namespace BluetoothLock
         {
             try
             {
-                var stream = System.Reflection.Assembly.GetExecutingAssembly()
+                var stream = Assembly.GetExecutingAssembly()
                     .GetManifestResourceStream("BluetoothLock.app.ico");
                 if (stream != null) return new Icon(stream);
             }
@@ -296,41 +392,28 @@ namespace BluetoothLock
             // 退出前写入 RSSI 日志
             WriteRssiLogToFile();
             _notifyIcon?.Dispose();
-            System.Windows.Application.Current.Shutdown();
+            Application.Current.Shutdown();
         }
 
-        // 将 RSSI 记录写入文件（保存到桌面或程序目录，便于查找）
         private void WriteRssiLogToFile()
         {
             if (_rssiLogs.Count == 0) return;
             try
             {
-                // 为了更容易找到，输出到桌面上的 rssi_log.txt
                 string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
                 string filePath = Path.Combine(desktopPath, "rssi_log.txt");
-                using var writer = new StreamWriter(filePath, false); // 覆盖写入
+                using var writer = new StreamWriter(filePath, false);
                 writer.WriteLine("时间,RSSI(dBm)");
                 foreach (var log in _rssiLogs)
-                {
                     writer.WriteLine($"{log.Time:yyyy-MM-dd HH:mm:ss},{log.Rssi}");
-                }
-                // 也可以输出到程序目录作为备份
+
                 string appDir = AppContext.BaseDirectory;
                 string appFilePath = Path.Combine(appDir, "rssi_log.txt");
                 File.WriteAllLines(appFilePath,
                     new[] { "时间,RSSI(dBm)" }.Concat(
                         _rssiLogs.Select(l => $"{l.Time:yyyy-MM-dd HH:mm:ss},{l.Rssi}")));
             }
-            catch (Exception ex)
-            {
-                // 静默失败，或者写入临时目录
-                try
-                {
-                    string fallback = Path.Combine(Path.GetTempPath(), "rssi_log.txt");
-                    File.WriteAllText(fallback, "日志写入失败: " + ex.Message);
-                }
-                catch { }
-            }
+            catch { }
         }
 
         private void MainWindow_Closing(object? sender, CancelEventArgs e)
@@ -343,37 +426,6 @@ namespace BluetoothLock
         {
             if (WindowState == WindowState.Minimized) this.Hide();
             base.OnStateChanged(e);
-        }
-
-        private void AutoStartCheckBox_Changed(object sender, RoutedEventArgs e)
-        {
-            string startupFolder = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
-            string shortcutPath = Path.Combine(startupFolder, "蓝牙锁屏监控.lnk");
-            if (AutoStartCheckBox.IsChecked == true)
-            {
-                CreateShortcut(shortcutPath);
-                StatusText.Text = "已设置开机自启。";
-            }
-            else
-            {
-                if (File.Exists(shortcutPath)) File.Delete(shortcutPath);
-                StatusText.Text = "已取消开机自启。";
-            }
-        }
-
-        private void CreateShortcut(string shortcutPath)
-        {
-            try
-            {
-                var shell = new IWshRuntimeLibrary.WshShell();
-                var shortcut = (IWshRuntimeLibrary.IWshShortcut)shell.CreateShortcut(shortcutPath);
-                string exePath = Environment.ProcessPath ?? System.Reflection.Assembly.GetExecutingAssembly().Location;
-                shortcut.TargetPath = exePath;
-                shortcut.WorkingDirectory = Path.GetDirectoryName(exePath);
-                shortcut.Description = "蓝牙锁屏 RSSI 测试版";
-                shortcut.Save();
-            }
-            catch (Exception ex) { StatusText.Text = $"开机自启设置失败: {ex.Message}"; }
         }
     }
 }
