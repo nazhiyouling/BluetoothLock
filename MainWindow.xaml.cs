@@ -211,19 +211,36 @@ namespace BluetoothLock
         {
             try
             {
-                // 获取 TX Power 服务 (0x1804)
-                var serviceResult = await GattDeviceService.FromIdAsync(device.DeviceId);
-                if (serviceResult == null) return null;
-                var characteristic = serviceResult.GetCharacteristics(new Guid("00002a07-0000-1000-8000-00805f9b34fb")).FirstOrDefault();
-                if (characteristic == null) return null;
-                var readResult = await characteristic.ReadValueAsync();
+                // 获取设备的所有 GATT 服务
+                var servicesResult = await device.GetGattServicesAsync();
+                if (servicesResult.Status != GattCommunicationStatus.Success)
+                    return null;
+        
+                // 查找 TxPower 服务 (0x1804)
+                var txPowerService = servicesResult.Services
+                    .FirstOrDefault(s => s.Uuid == new Guid("00001804-0000-1000-8000-00805f9b34fb"));
+                if (txPowerService == null)
+                    return null;
+        
+                // 获取 TxPowerLevel 特征 (0x2A07)
+                var characteristicsResult = await txPowerService.GetCharacteristicsAsync();
+                if (characteristicsResult.Status != GattCommunicationStatus.Success)
+                    return null;
+        
+                var rssiChar = characteristicsResult.Characteristics
+                    .FirstOrDefault(c => c.Uuid == new Guid("00002a07-0000-1000-8000-00805f9b34fb"));
+                if (rssiChar == null)
+                    return null;
+        
+                // 读取特征值
+                var readResult = await rssiChar.ReadValueAsync();
                 if (readResult.Status == GattCommunicationStatus.Success)
                 {
                     using var reader = DataReader.FromBuffer(readResult.Value);
                     byte[] data = new byte[reader.UnconsumedBufferLength];
                     reader.ReadBytes(data);
                     if (data.Length > 0)
-                        return (sbyte)data[0]; // RSSI 是有符号字节
+                        return (sbyte)data[0]; // RSSI 通常是一个有符号字节
                 }
             }
             catch { }
