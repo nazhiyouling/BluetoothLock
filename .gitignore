@@ -1,8 +1,6 @@
-# .NET / WPF 项目忽略
 bin/
 obj/
 .vs/
 *.user
 *.suo
 publish/
-*.DotSettings.user
