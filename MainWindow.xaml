@@ -1,47 +1,44 @@
 <Window x:Class="BluetoothLock.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="蓝牙锁屏监控" Height="300" Width="460"
+        Title="蓝牙锁屏监控 v3.0" Height="250" Width="350"
         WindowStyle="SingleBorderWindow"
         ShowInTaskbar="False"
-        ResizeMode="CanResizeWithGrip">
+        ResizeMode="CanMinimize">
     <Grid Margin="15">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- 标题 + 版本号 -->
-        <TextBlock x:Name="TitleText" FontSize="16" FontWeight="Bold" 
-                   TextWrapping="Wrap" Grid.Row="0" Margin="0,0,0,10"/>
+        <TextBlock Text="BLE 信号监听锁屏" FontSize="16" FontWeight="Bold" Margin="0,0,0,10" Grid.Row="0"/>
 
-        <!-- 设备选择 -->
         <StackPanel Grid.Row="1" Margin="0,0,0,10">
-            <TextBlock Text="选择要监控的 BLE 设备：" TextWrapping="Wrap"/>
-            <ComboBox x:Name="DeviceComboBox" DisplayMemberPath="Name" HorizontalAlignment="Stretch"/>
+            <TextBlock Text="当前目标设备信号强度 (RSSI):"/>
+            <TextBlock x:Name="RssiValueText" Text="-- dBm" FontSize="24" FontWeight="Bold" Foreground="Green"/>
         </StackPanel>
 
-        <!-- 控制按钮 -->
-        <StackPanel Orientation="Horizontal" Grid.Row="2" Margin="0,0,0,10">
-            <Button Content="开始监控" Click="StartStopButton_Click" Height="30" Width="100"/>
-            <Button Content="⚙ 设置" Click="OpenSettings_Click" Height="30" Width="80" Margin="10,0,0,0"/>
+        <StackPanel Grid.Row="2" Margin="0,0,0,10">
+            <TextBlock Text="锁屏阈值 (dBm):"/>
+            <TextBox x:Name="ThresholdTextBox" Width="80" HorizontalAlignment="Left" Height="24"/>
+            <TextBlock Text="低于此值且持续 2 次检测 (3秒) 即锁屏" FontSize="11" Foreground="Gray"/>
         </StackPanel>
 
-        <!-- 状态信息（可滚动区域） -->
-        <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto" MaxHeight="100">
-            <TextBlock x:Name="StatusText" Text="未监控" Foreground="Gray" TextWrapping="Wrap" Margin="0,5,0,10"/>
-        </ScrollViewer>
+        <StackPanel Orientation="Horizontal" Grid.Row="3" Margin="0,0,0,10">
+            <Button Content="开始监听" Click="StartStopButton_Click" Height="30" Width="100"/>
+            <Button Content="保存阈值" Click="SaveThreshold_Click" Height="30" Width="80" Margin="10,0,0,0"/>
+            <CheckBox x:Name="AutoStartCheckBox" Content="开机自启" Margin="20,0,0,0"
+                      Checked="AutoStartCheckBox_Changed" Unchecked="AutoStartCheckBox_Changed"/>
+        </StackPanel>
 
-        <!-- 日志计数 -->
-        <TextBlock x:Name="LogCountText" Grid.Row="4" Text="已记录: 0 次"
-                   Foreground="DarkBlue" Margin="0,0,0,10" TextWrapping="Wrap"/>
+        <TextBlock x:Name="StatusText" Text="监听未启动" Grid.Row="4"
+                   Foreground="Gray" TextWrapping="Wrap" Margin="0,5,0,10"/>
 
-        <!-- 底部提示 -->
-        <TextBlock Grid.Row="5" TextWrapping="Wrap" Foreground="DarkGray" FontSize="12"
-                   Text="提示：可通过右键托盘图标退出或显示窗口。启动后自动最小化到托盘。"/>
+        <TextBlock Grid.Row="5" TextWrapping="Wrap" Foreground="DarkGray" FontSize="11"
+                   Text="提示：确保手机端广播已开启，UUID 与程序内置匹配。托盘右键可退出。"/>
     </Grid>
 </Window>
