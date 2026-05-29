@@ -5,11 +5,15 @@
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
-    <ApplicationIcon>app.ico</ApplicationIcon>
-    <Version>2026.0529.1130</Version>   <!-- 版本号 -->
+    <ApplicationIcon>app.ico</ApplicationIcon>   <!-- EXE 文件图标 -->
+    <Version>2026.0529.1130</Version>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Interop.IWshRuntimeLibrary" Version="1.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="app.ico" />       <!-- 嵌入以便托盘加载 -->
   </ItemGroup>
 </Project>
