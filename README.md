@@ -1,2 +1,2 @@
 # BluetoothLock
-蓝牙断开自动锁屏
+蓝牙锁屏软件
