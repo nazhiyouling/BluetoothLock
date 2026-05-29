@@ -19,7 +19,7 @@ namespace BluetoothLock
         [DllImport("user32.dll")]
         public static extern bool LockWorkStation();
 
-        // 目标 UUID（必须与手机广播的服务 UUID 一致）
+        // 目标 UUID（必须与手机广播的服务 UUID 完全一致）
         private static readonly Guid TargetUuid = Guid.Parse("0000AAAA-0000-1000-8000-00805F9B34FB");
 
         private BluetoothLEAdvertisementWatcher? _watcher;
@@ -28,7 +28,7 @@ namespace BluetoothLock
 
         // RSSI 数据处理
         private short? _lastRssi = null;
-        private short _rssiThreshold = -70;        // 默认阈值
+        private short _rssiThreshold = -70;          // 默认阈值 (dBm)
         private int _lowRssiCount = 0;
         private const int LowRssiThresholdCount = 2;  // 连续2次低于阈值触发锁屏
         private DispatcherTimer? _rssiTimer;
@@ -112,7 +112,7 @@ namespace BluetoothLock
                 _watcher.Start();
                 _isListening = true;
 
-                // 每 1.5 秒检查一次 RSSI 状态
+                // 每 1.5 秒检查一次 RSSI 状态（2次连续低于阈值即锁屏，约3秒）
                 _rssiTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
                 _rssiTimer.Tick += CheckRssiAndLock;
                 _rssiTimer.Start();
@@ -139,12 +139,14 @@ namespace BluetoothLock
             _lowRssiCount = 0;
             RssiValueText.Text = "-- dBm";
             StatusText.Text = "监听已停止";
-            (sender as System.Windows.Controls.Button)!.Content = "开始监听";
+            // 按钮文本在 StartStopButton_Click 中已改为“停止监听”，这里改为“开始监听”
+            // 但由于该按钮被传递给多个地方，这里安全起见不直接修改按钮内容，
+            // 会在调用方重新设置。
         }
 
         private void OnAdvertisementReceived(BluetoothLEAdvertisementWatcher sender, BluetoothLEAdvertisementReceivedEventArgs args)
         {
-            // 检查广播包中是否包含我们的目标 UUID
+            // 检查广播包中是否包含目标 UUID
             if (args.Advertisement.ServiceUuids.Any(uuid => uuid == TargetUuid))
             {
                 _lastRssi = args.RawSignalStrengthInDBm;
@@ -171,12 +173,14 @@ namespace BluetoothLock
             if (_lastRssi.Value < _rssiThreshold)
             {
                 _lowRssiCount++;
-                Dispatcher.Invoke(() => StatusText.Text = $"信号弱: {_lastRssi} dBm (低于阈值 {_rssiThreshold})，计数 {_lowRssiCount}/{LowRssiThresholdCount}");
+                Dispatcher.Invoke(() =>
+                    StatusText.Text = $"信号弱: {_lastRssi} dBm (阈值 {_rssiThreshold})，计数 {_lowRssiCount}/{LowRssiThresholdCount}");
                 if (_lowRssiCount >= LowRssiThresholdCount)
                 {
                     LockWorkStation();
-                    Dispatcher.Invoke(() => StatusText.Text = $"信号持续低于阈值，屏幕已锁定 ({DateTime.Now:T})");
-                    _lowRssiCount = 0; // 锁屏后重置，避免重复
+                    Dispatcher.Invoke(() =>
+                        StatusText.Text = $"信号持续低于阈值，屏幕已锁定 ({DateTime.Now:T})");
+                    _lowRssiCount = 0; // 锁屏后重置计数器
                 }
             }
             else
@@ -191,7 +195,7 @@ namespace BluetoothLock
         {
             _notifyIcon = new NotifyIcon
             {
-                Icon = SystemIcons.Application,
+                Icon = LoadTrayIcon(),
                 Visible = true,
                 Text = "蓝牙锁屏监听"
             };
@@ -203,6 +207,20 @@ namespace BluetoothLock
             _notifyIcon.ContextMenuStrip = menu;
         }
 
+        // 加载嵌入的 app.ico，失败时回退到系统默认图标
+        private Icon LoadTrayIcon()
+        {
+            try
+            {
+                var stream = Assembly.GetExecutingAssembly()
+                    .GetManifestResourceStream("BluetoothLock.app.ico");
+                if (stream != null)
+                    return new Icon(stream);
+            }
+            catch { }
+            return SystemIcons.Application;
+        }
+
         private void ShowWindow()
         {
             this.Show();
@@ -212,13 +230,19 @@ namespace BluetoothLock
 
         private void ExitApplication()
         {
-            StopListening();
+            // 停止监听
+            if (_isListening)
+            {
+                _watcher?.Stop();
+                _rssiTimer?.Stop();
+            }
             _notifyIcon?.Dispose();
-            Application.Current.Shutdown();
+            System.Windows.Application.Current.Shutdown();
         }
 
         private void MainWindow_Closing(object? sender, CancelEventArgs e)
         {
+            // 关闭窗口时隐藏到托盘
             e.Cancel = true;
             this.Hide();
         }
@@ -227,7 +251,7 @@ namespace BluetoothLock
         private void AutoStartCheckBox_Changed(object sender, RoutedEventArgs e)
         {
             string startupFolder = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
-            string shortcutPath = Path.Combine(startupFolder, "蓝牙锁屏监控.lnk");
+            string shortcutPath = Path.Combine(startupFolder, "蓝牙锁屏监听.lnk");
             if (AutoStartCheckBox.IsChecked == true)
             {
                 CreateShortcut(shortcutPath);
